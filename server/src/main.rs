@@ -14,19 +14,17 @@ impl WorkerContext {
         }
     }
 
-    fn execute(&self, mut connection: TcpStream) -> io::Result<()> {
-        self.file_list.send(&mut connection)?;
+    fn execute(&self, mut stream: TcpStream) -> io::Result<()> {
+        self.file_list.send(&mut stream)?;
 
         let mut files = initialize_handlers(self.file_list.len());
         let mut priorities = priority_list::new(self.file_list.len());
         let mut next_priorities = priority_list::new(self.file_list.len());
 
         loop {
-            connection.set_read_timeout(None)?;
-            connection.read_exact(&mut next_priorities)?;
+            stream.read_exact(&mut next_priorities)?;
             let mut to_download = priority_list::merge(&mut priorities, &next_priorities);
-            
-            // connection.set_read_timeout(Some(Duration::from_micros(20)))?;
+
             while to_download > 0 {
                 for ((handler, path), priority) in files.iter_mut()
                     .zip(self.path_list.iter())
@@ -41,7 +39,7 @@ impl WorkerContext {
                     for _ in 0..*priority {
                         let chunk = Chunk::read(opened)?;
 
-                        chunk.send(&mut connection)?;
+                        chunk.send(&mut stream)?;
 
                         if chunk.end() {
                             handler.done = true;
@@ -51,17 +49,6 @@ impl WorkerContext {
                         }
                     }
                 }
-
-                // match connection.read_exact(&mut [0]) {
-                //     Ok(()) => {
-                //         todo!("Handle file change");
-                //     },
-                //     Err(err) => {
-                //         if err.kind() != io::ErrorKind::WouldBlock {
-                //             return Err(err);
-                //         }
-                //     }
-                // }
             }
         }
     }
@@ -105,7 +92,8 @@ fn get_files(input_dir: &Path) -> (FileList, Box<[PathBuf]>) {
     let files = match input_dir.read_dir() {
         Ok(files) => files,
         Err(err) => {
-            eprintln!("ERROR: Failed to read directory `{}`: {err}", input_dir.display());
+            eprintln!("ERROR: Failed to read dir        let mut priorities = priority_list::new(self.file_list.len());
+        let mut next_priorities = priority_list::new(self.file_list.len());ectory `{}`: {err}", input_dir.display());
             return ([].into(), [].into());
         }
     };
@@ -154,7 +142,7 @@ fn main() {
 
     for id in 0..opt.thread_count {
         let local_sender = sender.clone();
-        let (worker_sender, worker_receiver) = mpsc::channel();
+        let (worker_sender, worker_receiver) = mpsc::channel::<TcpStream>();
 
         let ctx = WorkerContext::new(&files, &paths);
 
@@ -162,8 +150,12 @@ fn main() {
         thread::spawn(move || {
             local_sender.send(id).unwrap();
             while let Ok(job) = worker_receiver.recv() {
+                let ip = job.peer_addr();
                 if let Err(err) = ctx.execute(job) {
-                    eprintln!("ERROR: Failed to handle connection: {err}")
+                    eprintln!("[Thread {id}] {err}")
+                }
+                if let Ok(addr) = ip {
+                    println!("[Thread {id}] Client `{addr}` disconnected");
                 }
                 local_sender.send(id).unwrap();
             }
@@ -188,8 +180,6 @@ fn main() {
 
                 if let Ok(addr) = stream.peer_addr() {
                     println!("[Thread {worker_id}] Client `{addr}` connected");
-                } else {
-                    eprint!("[Thread {worker_id}] Client with unknown address connected");
                 }
 
                 workers[worker_id].send(stream).unwrap();

@@ -1,4 +1,4 @@
-use std::{ collections::HashMap, env, fs::{self, File}, io::{self, BufRead, BufReader, Write}, net::TcpStream, path::{Path, PathBuf}, process, str, thread, time::Duration };
+use std::{collections::HashMap, env, fs::{self, File}, io::{self, BufRead, BufReader, Write}, net::TcpStream, path::{Path, PathBuf}, process, str, thread, time::Duration};
 use common::{initialize_handlers, priority_list, Chunk, FileList, Packet};
 
 struct Config {
