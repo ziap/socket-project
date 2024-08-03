@@ -76,11 +76,7 @@ impl Chunk {
 
 impl Packet for Chunk {
     fn send(&self, stream: &mut TcpStream) -> io::Result<()> {
-        let header = if self.end() {
-            (1 << 15) | self.len
-        } else {
-            0
-        } as u16;
+        let header = if self.end() { (1 << 15) | self.len as u16 } else { 0 };
         stream.write_all(&header.to_be_bytes())?;
         stream.write_all(&self.buf[..self.len])
     }

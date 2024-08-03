@@ -2,24 +2,12 @@ use std::{collections::HashMap, env, fs::{self, File}, io::{self, BufRead, BufRe
 use common::{initialize_handlers, priority_list, Chunk, FileList, Packet};
 
 struct Config {
-    ip: Box<str>,
-    port: Box<str>,
     output_dir: PathBuf,
 }
 
 impl Config {
     fn get() -> Self {
         Self {
-            ip: if let Ok(ip) = env::var("IP") {
-                ip.into()
-            } else {
-                "127.0.0.1".into()
-            },
-            port: if let Ok(port) = env::var("PORT") {
-                port.into()
-            } else {
-                "3000".into()
-            },
             output_dir: if let Ok(input_dir) = env::var("OUTPUT_DIR") {
                 input_dir.into()
             } else {
@@ -62,7 +50,15 @@ fn format_size(mut x: u64) -> String {
 
 fn main() -> io::Result<()> {
     let opt = Config::get();
-    let addr = format!("{}:{}", opt.ip, opt.port);
+    let addr = {
+        let mut addr = String::new();
+        let mut stdout = std::io::stdout();
+        stdout.write_all("Enter the server address: ".as_bytes())?;
+        stdout.flush()?;
+        std::io::stdin().read_line(&mut addr)?;
+        addr.truncate(addr.trim_end().len());
+        addr
+    };
     
     let mut arg_iter = env::args();
     arg_iter.next();
@@ -83,7 +79,7 @@ fn main() -> io::Result<()> {
         }
     }
 
-    println!("Connecting to server... ");
+    println!("Connecting to server at `{addr}`... ");
     let mut stream = TcpStream::connect(addr)?;
 
     println!("Connection established\n");
