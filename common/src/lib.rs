@@ -1,21 +1,18 @@
-use std::{fs::File, io::{self, Read, Write}, mem, net::TcpStream, str};
+use std::{fs::File, io::{self, Read, Write}, mem, str};
 
 pub trait Packet {
-    fn send(&self, stream: &mut TcpStream) -> io::Result<()>;
-    fn recv(stream: &mut TcpStream) -> io::Result<Self> where Self: Sized;
+    fn send<T: Write>(&self, stream: &mut T) -> io::Result<()>;
+    fn recv<T: Read>(stream: &mut T) -> io::Result<Self> where Self: Sized;
 }
 
 pub type FileList = Box<[(Box<str>, u64)]>;
 
 impl Packet for FileList {
-    fn send(&self, stream: &mut TcpStream) -> io::Result<()> {
+    fn send<T: Write>(&self, stream: &mut T) -> io::Result<()> {
         stream.write_all(&self.len().to_be_bytes())?;
-        let sizes = self.iter().fold(Vec::new(), |mut a, (_, size)| {
-            a.extend(size.to_be_bytes());
-            a
-        });
-        assert!(sizes.len() == self.len() * mem::size_of::<usize>());
-        stream.write_all(&sizes)?;
+        for (_, size) in self.iter() {
+            stream.write(&size.to_be_bytes())?;
+        }
 
         let names = self.iter()
             .fold(String::new(), |a, (name, _)| a + "\0" + name);
@@ -25,7 +22,7 @@ impl Packet for FileList {
         stream.write_all(&bytes)
     }
 
-    fn recv(stream: &mut TcpStream) -> io::Result<Self> {
+    fn recv<T: Read>(stream: &mut T) -> io::Result<Self> {
         let len = {
             let mut buf = [0; mem::size_of::<usize>()];
             stream.read_exact(&mut buf)?;
@@ -75,13 +72,13 @@ impl Chunk {
 }
 
 impl Packet for Chunk {
-    fn send(&self, stream: &mut TcpStream) -> io::Result<()> {
+    fn send<T: Write>(&self, stream: &mut T) -> io::Result<()> {
         let header = if self.end() { (1 << 15) | self.len as u16 } else { 0 };
         stream.write_all(&header.to_be_bytes())?;
         stream.write_all(&self.buf[..self.len])
     }
 
-    fn recv(stream: &mut TcpStream) -> io::Result<Self> {
+    fn recv<T: Read>(stream: &mut T) -> io::Result<Self> {
         let header = {
             let mut buf = [0; mem::size_of::<u16>()];
             stream.read_exact(&mut buf)?;
