@@ -59,13 +59,13 @@ impl Chunk {
     pub fn end(&self) -> bool {
         self.len < 1024
     }
-    pub fn read(file: &mut File) -> io::Result<Self> {
+    pub fn read<T: Read>(file: &mut T) -> io::Result<Self> {
         let mut buf = [0; 1024];
         let len = file.read(&mut buf)?;
         Ok(Chunk {len, buf})
     }
 
-    pub fn write(mut self, file: &mut File) -> io::Result<bool> {
+    pub fn write<T: Write>(mut self, file: &mut T) -> io::Result<bool> {
         file.write_all(&mut self.buf[..self.len])?;
         Ok(self.end())
     }
