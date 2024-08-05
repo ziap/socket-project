@@ -82,8 +82,13 @@ fn main() -> io::Result<()> {
     println!("Connecting to server at `{addr}`... ");
     let mut stream = TcpStream::connect(addr)?;
 
-    println!("Connection established\n");
+    println!("Connection established");
     let downloadables = FileList::recv(&mut stream)?;
+
+    let file_lens: Box<[usize]> = downloadables
+        .iter()
+        .map(|(name, _)| name.chars().count())
+        .collect();
 
     let paths: Box<[PathBuf]> = downloadables.iter()
         .map(|(name, _)| output_path.join(name.as_ref()))
@@ -94,25 +99,27 @@ fn main() -> io::Result<()> {
         .map(|(idx, (name, _))| (name.as_ref(), idx))
         .collect();
 
-    println!("Files available for download:");
-    for (name, size) in downloadables.iter() {
-        println!(" - {name} - {}", format_size(*size));
-    }
     println!();
+    println!("Files available for download:");
+    let max_len = file_lens.iter().cloned().max().unwrap_or(0);
+    for (name, size) in downloadables.iter() {
+        println!(" - {0:1$} - {2}", name, max_len, format_size(*size));
+    }
 
     let mut files = initialize_handlers(downloadables.len());
     let mut priorities = priority_list::new(downloadables.len());
     let mut next_priorities = priority_list::new(downloadables.len());
 
-    let mut progress: Box<[u64]> = vec![0; downloadables.len()].into();
+    let mut progress: Box<[usize]> = vec![0; downloadables.len()].into();
+
+    println!();
 
     loop {
+        let last_changed = input_path.metadata()?.modified()?;
         read_input(&input_path, &inverse_map, &mut next_priorities);
         let mut to_download = priority_list::merge(&mut priorities, &next_priorities);
         stream.write_all(&priorities)?;
 
-
-        // TODO: Terminate this loop with CTRL-C
         while to_download > 0 {
             for idx in 0..downloadables.len() {
                 let handler = &mut files[idx];
@@ -127,7 +134,7 @@ fn main() -> io::Result<()> {
 
                 for _ in 0..priority {
                     let chunk = Chunk::recv(&mut stream)?;
-                    progress[idx] += chunk.len as u64;
+                    progress[idx] += chunk.len;
 
                     if chunk.write(opened)? {
                         handler.done = true;
@@ -139,21 +146,48 @@ fn main() -> io::Result<()> {
                 }
             }
 
-            let mut downloading = 0;
-            for idx in 0..downloadables.len() {
-                if files[idx].done || progress[idx] == 0 {
-                    continue;
+            let downloading_files: Box<[usize]> = (0..downloadables.len()).filter(|idx| {
+                !files[*idx].done && progress[*idx] != 0
+            }).collect();
+
+            let max_downloading_len = downloading_files.iter().map(|idx| file_lens[*idx]).max().unwrap_or(0);
+
+            for idx in downloading_files.iter() {
+                let full_block = '█';
+                let blocks = [' ', '▏', '▎', '▍', '▌', '▋', '▊', '▉'];
+
+                const PROGRESS_LEN: usize = 64;
+                let resolution = PROGRESS_LEN * blocks.len();
+                let (name, size) = &downloadables[*idx];
+                let pos = progress[*idx] * resolution / (*size as usize);
+                let full = pos / blocks.len();
+
+                let mut progress_bar = [' '; PROGRESS_LEN];
+                for c in progress_bar[..full].iter_mut() {
+                    *c = full_block;
                 }
-                let (name, size) = &downloadables[idx];
-                println!("Downloading file `{name}` - {}%", progress[idx] * 100 / size);
-                downloading += 1;
+                if full < progress_bar.len() {
+                    progress_bar[full] = blocks[pos % blocks.len()];
+                }
+                let progress_str: String = progress_bar.iter().collect();
+                println!("Downloading file {0:1$} [{2}] {3}%", name, max_downloading_len, progress_str, progress[*idx] * 100 / (*size as usize));
             }
 
-            for _ in 0..downloading {
+            for _ in 0..downloading_files.len() {
                 print!("\x1b[A\x1b[K");
             }
         }
 
-        thread::sleep(Duration::from_secs(2));
+        if input_path.metadata()?.modified()? > last_changed {
+            continue;
+        }
+
+        let frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+        for frame in frames {
+            println!();
+            println!(" {frame} Edit `{}` to start downloading", input_path.display());
+            print!("\x1b[A\x1b[K\x1b[A\x1b[K");
+            thread::sleep(Duration::from_millis(200));
+        }
     }
 }
