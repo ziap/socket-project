@@ -92,8 +92,7 @@ fn get_files(input_dir: &Path) -> (FileList, Box<[PathBuf]>) {
     let files = match input_dir.read_dir() {
         Ok(files) => files,
         Err(err) => {
-            eprintln!("ERROR: Failed to read dir        let mut priorities = priority_list::new(self.file_list.len());
-        let mut next_priorities = priority_list::new(self.file_list.len());ectory `{}`: {err}", input_dir.display());
+            eprintln!("ERROR: Failed to read directory `{}`: {err}", input_dir.display());
             return ([].into(), [].into());
         }
     };
